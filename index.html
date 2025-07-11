@@ -53,23 +53,23 @@
         if (mode === 'photo') {
           const res = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(search)}&per_page=20&page=${page}`, { headers });
           const json = await res.json();
-          data = json.photos.filter(p => matchRatio(p.width / p.height, ratio));
+          data = json.photos; // Tidak difilter rasio, agar gambar selalu tampil
           renderPhotos(data);
         } else {
           const res = await fetch(`https://api.pexels.com/videos/search?query=${encodeURIComponent(search)}&per_page=20&page=${page}`, { headers });
           const json = await res.json();
-          data = json.videos.filter(v => matchRatio(v.width / v.height, ratio));
+          data = json.videos.filter(v => matchRatio(v.width / v.height, ratio)); // Hanya video difilter
           renderVideos(data);
         }
       } catch (e) {
         console.error("Fetch error:", e);
-        gallery.innerHTML = "Gagal memuat. Cek koneksi atau API Key.";
+        gallery.innerHTML = "Gagal memuat. Periksa koneksi atau API Key.";
       }
     }
 
     function matchRatio(aspect, target) {
-      if (target === "16:9") return Math.abs(aspect - 16 / 9) < 0.1;
-      if (target === "9:16") return Math.abs(aspect - 9 / 16) < 0.1;
+      if (target === "16:9") return Math.abs(aspect - 16 / 9) < 0.2;
+      if (target === "9:16") return Math.abs(aspect - 9 / 16) < 0.2;
       return true;
     }
 
@@ -126,7 +126,6 @@
       if (currentPage > 1) loadPage(currentPage - 1);
     }
 
-    // Load otomatis saat halaman dibuka
     document.addEventListener("DOMContentLoaded", () => {
       loadPage(1);
     });
