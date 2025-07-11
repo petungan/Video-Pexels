@@ -3,132 +3,279 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Galeri Pexels</title>
+  <title>Galeri Gabungan - Created by Tius</title>
   <style>
-    body { font-family: sans-serif; padding: 1rem; background: #f5f5f5 }
+    body { font-family: sans-serif; padding: 1rem; background: #f0f0f0 }
     .controls { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem }
     .gallery { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center }
     .item { background: #fff; padding: 0.5rem; border-radius: 8px; width: 300px }
     video, img { width: 100%; border-radius: 8px }
     button, select, input { padding: 6px 10px; font-size: 14px }
+    .pagination { display: flex; justify-content: center; gap: 1rem; margin-top: 1rem; }
   </style>
 </head>
 <body>
-  <h2>Galeri Pexels</h2>
+  <h2>Galeri Gabungan - Created by Tius</h2>
   <div class="controls">
-    <select id="mode">
+    <select id="type" onchange="toggleAspect()">
       <option value="photo">Gambar</option>
       <option value="video">Video</option>
     </select>
-    <select id="ratio">
-      <option value="16:9">16:9</option>
-      <option value="9:16">9:16</option>
+    <select id="aspect" style="display:none;">
+      <option value="all">Semua Rasio</option>
+      <option value="landscape">16:9</option>
+      <option value="portrait">9:16</option>
     </select>
-    <input type="text" id="search" placeholder="Kata kunci..." />
-    <button onclick="loadPage(1)">Cari</button>
+    <input type="text" id="search" placeholder="Kata kunci (contoh: forest, woman)" />
+    <input type="text" id="pexelsKey" placeholder="API Key Pexels" />
+    <input type="text" id="pixabayKey" placeholder="API Key Pixabay" />
+    <button onclick="loadCombined()">Cari</button>
   </div>
+
   <div id="gallery" class="gallery"></div>
-  <div class="controls">
-    <button onclick="prevPage()">Sebelumnya</button>
-    <button onclick="nextPage()">Berikutnya</button>
+
+  <div class="pagination">
+    <button id="prevPage" onclick="changePage(-1)" disabled>Halaman Sebelumnya</button>
+    <button id="nextPage" onclick="changePage(1)">Halaman Selanjutnya</button>
   </div>
 
   <script>
-    const API_KEY = "UM6sxKhVbnKYTzkTGbZ3fHW4v5DpJzAynjePGssIle8HIBHbMhAwKaOO";
-    let currentPage = 1;
-    const PER_PAGE = 5;
+    let currentPexelsPage = 1;
+    let currentPixabayPage = 1;
+    let currentPage = 1; // Halaman saat ini untuk tampilan gabungan
+    let totalItems = []; // Menyimpan semua item yang dimuat dari API
+    let isLoading = false; // Untuk mencegah multiple request saat loadCombined sedang berjalan
 
-    async function loadPage(page = 1) {
-      const mode = document.getElementById('mode').value;
-      const ratio = document.getElementById('ratio').value;
-      const search = document.getElementById('search').value.trim() || "nature";
-      const gallery = document.getElementById('gallery');
-      currentPage = page;
+    const altKeywords = ["portrait", "vertical", "story", "tiktok"];
+    const pexelsInput = document.getElementById("pexelsKey");
+    const pixabayInput = document.getElementById("pixabayKey");
+    const gallery = document.getElementById("gallery");
+    const prevPageBtn = document.getElementById("prevPage");
+    const nextPageBtn = document.getElementById("nextPage");
 
-      gallery.innerHTML = "Loading...";
-      const headers = { Authorization: API_KEY };
-      let data = [];
+    // Simpan API Key ke Local Storage
+    [pexelsInput, pixabayInput].forEach(input => {
+      input.addEventListener("input", () => {
+        localStorage.setItem(input.id, input.value);
+      });
+    });
 
-      try {
-        if (mode === 'photo') {
-          const res = await fetch(`https://api.pexels.com/v1/search?query=${encodeURIComponent(search)}&per_page=20&page=${page}`, { headers });
-          const json = await res.json();
-          data = json.photos; // Tidak difilter rasio, agar gambar selalu tampil
-          renderPhotos(data);
-        } else {
-          const res = await fetch(`https://api.pexels.com/videos/search?query=${encodeURIComponent(search)}&per_page=20&page=${page}`, { headers });
-          const json = await res.json();
-          data = json.videos.filter(v => matchRatio(v.width / v.height, ratio)); // Hanya video difilter
-          renderVideos(data);
-        }
-      } catch (e) {
-        console.error("Fetch error:", e);
-        gallery.innerHTML = "Gagal memuat. Periksa koneksi atau API Key.";
+    // Muat API Key dari Local Storage saat halaman dimuat
+    document.addEventListener("DOMContentLoaded", () => {
+      pexelsInput.value = localStorage.getItem("pexelsKey") || "";
+      pixabayInput.value = localStorage.getItem("pixabayKey") || "28058361-712feb2d52005237dabff0204"; // Contoh key Pixabay
+      toggleAspect(); // Panggil ini untuk menyetel tampilan awal rasio aspek
+      loadCombined(); // Muat data awal saat halaman pertama kali dibuka
+    });
+
+    // Menampilkan/menyembunyikan pilihan rasio aspek berdasarkan tipe media
+    function toggleAspect() {
+      const show = document.getElementById("type").value === "video";
+      document.getElementById("aspect").style.display = show ? "inline-block" : "none";
+    }
+
+    // Mendapatkan batas item per halaman berdasarkan tipe dan aspek
+    function getItemsPerPage() {
+      const type = document.getElementById("type").value;
+      const aspect = document.getElementById("aspect").value;
+
+      if (type === "video") {
+        return aspect === "portrait" ? 6 : 10; // 6 video 9:16, 10 video 16:9
+      } else {
+        return 10; // 10 foto per halaman (Anda bisa sesuaikan)
       }
     }
 
-    function matchRatio(aspect, target) {
-      if (target === "16:9") return Math.abs(aspect - 16 / 9) < 0.2;
-      if (target === "9:16") return Math.abs(aspect - 9 / 16) < 0.2;
-      return true;
+    async function loadCombined(reset = true) {
+      if (isLoading) return; // Mencegah pemanggilan ganda
+      isLoading = true;
+
+      if (reset) {
+        currentPexelsPage = 1; // Reset halaman Pexels
+        currentPixabayPage = 1; // Reset halaman Pixabay
+        currentPage = 1; // Reset halaman tampilan
+        totalItems = []; // Reset semua item yang dimuat
+        gallery.innerHTML = ""; // Bersihkan galeri
+      }
+
+      const type = document.getElementById("type").value;
+      const aspect = document.getElementById("aspect").value;
+      const search = document.getElementById("search").value.trim() || "nature";
+      const pexelsKey = document.getElementById("pexelsKey").value.trim();
+      const pixabayKey = document.getElementById("pixabayKey").value.trim();
+
+      const itemsPerPage = getItemsPerPage();
+      // Untuk memastikan kita mendapatkan cukup item, kita bisa meminta lebih dari API
+      // Misalnya, dua kali lipat dari itemsPerPage untuk berjaga-jaga
+      // Kita juga perlu memastikan minimal ada itemsPerPage untuk halaman pertama
+      let pexelsLimit = Math.max(itemsPerPage, 15); // Ambil minimal 15 atau itemsPerPage
+      let pixabayLimit = Math.max(itemsPerPage, 15); // Ambil minimal 15 atau itemsPerPage
+
+      // Kumpulkan semua promises API
+      const apiPromises = [];
+
+      // --- PEXELS PHOTOS/VIDEOS ---
+      if (pexelsKey) {
+        const pexelsUrl = type === "photo" ?
+          `https://api.pexels.com/v1/search?query=${search}&per_page=${pexelsLimit}&page=${currentPexelsPage}` :
+          `https://api.pexels.com/videos/search?query=${search}&per_page=${pexelsLimit}&page=${currentPexelsPage}`; // Hapus query_orientation dari Pexels, filter manual
+
+        apiPromises.push(
+          fetch(pexelsUrl, { headers: { Authorization: pexelsKey } })
+            .then(res => res.json())
+            .then(json => {
+              if (type === "photo") {
+                return json.photos.map(p => ({ src: p.src.large, type: 'photo' }));
+              } else {
+                let vids = json.videos;
+                // Filter berdasarkan rasio aspek jika aspect bukan 'all'
+                if (aspect !== "all") {
+                  vids = vids.filter(v => {
+                    const ratio = v.width / v.height;
+                    return aspect === "portrait" ? ratio < 0.75 : ratio >= 1.6;
+                  });
+                }
+                return vids.map(v => ({
+                  src: v.video_files.find(file => file.quality === 'sd' || file.quality === 'medium' || file.quality === 'hd')?.link || v.video_files[0]?.link,
+                  type: 'video'
+                })).filter(item => item.src);
+              }
+            })
+            .catch(error => {
+              console.error("Error fetching Pexels:", error);
+              return [];
+            })
+        );
+      }
+
+      // --- PIXABAY PHOTOS/VIDEOS ---
+      if (pixabayKey) {
+        let pixabayVideoOrientation = "";
+        if (type === "video") {
+          if (aspect === "portrait") {
+            pixabayVideoOrientation = "&orientation=vertical";
+          } else if (aspect === "landscape") {
+            pixabayVideoOrientation = "&orientation=horizontal";
+          }
+        }
+        
+        const pixabayUrl = type === "photo" ?
+          `https://pixabay.com/api/?key=${pixabayKey}&q=${search}&image_type=photo&per_page=${pixabayLimit}&page=${currentPixabayPage}` :
+          `https://pixabay.com/api/videos/?key=${pixabayKey}&q=${search}${pixabayVideoOrientation}&per_page=${pixabayLimit}&page=${currentPixabayPage}`;
+
+        apiPromises.push(
+          fetch(pixabayUrl)
+            .then(res => res.json())
+            .then(json => {
+              if (type === "photo") {
+                return json.hits.map(p => ({ src: p.webformatURL, type: 'photo' }));
+              } else {
+                let vids = json.hits;
+                // Pixabay API sudah bisa filter orientasi, jadi filter manual ini bisa dihapus jika orientasi sudah di URL
+                // Namun, untuk konsistensi dengan Pexels atau jika orientasi tidak selalu akurat, bisa dipertahankan
+                // Untuk kasus ini, kita mengandalkan parameter orientasi di URL Pixabay.
+                return vids.map(v => ({ src: v.videos.medium.url, type: 'video' })).filter(item => item.src);
+              }
+            })
+            .catch(error => {
+              console.error("Error fetching Pixabay:", error);
+              return [];
+            })
+        );
+      }
+
+      // Jalankan semua promises secara bersamaan
+      const newItems = (await Promise.all(apiPromises)).flat();
+      totalItems = totalItems.concat(newItems); // Tambahkan item baru ke totalItems
+
+      displayPage(currentPage); // Tampilkan halaman saat ini dari hasil gabungan
+      
+      // Tingkatkan halaman untuk panggilan API berikutnya (jika diperlukan untuk "Muat Selanjutnya")
+      currentPexelsPage++;
+      currentPixabayPage++;
+      isLoading = false;
     }
 
-    function renderPhotos(photos) {
-      const gallery = document.getElementById("gallery");
-      gallery.innerHTML = "";
-      photos.slice(0, PER_PAGE).forEach(photo => {
-        const div = document.createElement("div");
-        div.className = "item";
-        div.innerHTML = `
-          <img src="${photo.src.large}" alt="photo" />
-          <p style="font-size:12px; text-align:right;">Created by Tius</p>
-          <a href="${photo.src.original}" download>
-            <button>Download</button>
-          </a>
-          <a href="https://www.canva.com/design" target="_blank">
-            <button>Buka di Canva</button>
-          </a>
-        `;
-        gallery.appendChild(div);
+    function displayPage(pageNumber) {
+      gallery.innerHTML = ""; // Bersihkan galeri sebelum menampilkan item baru
+      const itemsPerPage = getItemsPerPage();
+      const startIndex = (pageNumber - 1) * itemsPerPage;
+      const endIndex = startIndex + itemsPerPage;
+      const itemsToDisplay = totalItems.slice(startIndex, endIndex);
+
+      itemsToDisplay.forEach(item => {
+        if (item.type === 'photo') {
+          displayPhoto(item.src);
+        } else {
+          displayVideo(item.src);
+        }
       });
+
+      // Atur status tombol navigasi
+      prevPageBtn.disabled = currentPage === 1;
+      nextPageBtn.disabled = endIndex >= totalItems.length;
+
+      // Jika kita mendekati akhir dari totalItems dan masih ada potensi untuk memuat lebih banyak dari API,
+      // kita bisa memicu `loadCombined(false)` untuk mengisi `totalItems` lebih lanjut.
+      // Ini adalah strategi "lazy loading" untuk halaman berikutnya.
+      // Kita panggil loadCombined(false) jika totalItems kurang dari jumlah yang dibutuhkan untuk 2 halaman ke depan
+      if (endIndex + itemsPerPage > totalItems.length && !isLoading) {
+         loadCombined(false); // Muat lebih banyak tanpa mereset galeri jika diperlukan
+      }
     }
 
-    function renderVideos(videos) {
-      const gallery = document.getElementById("gallery");
-      gallery.innerHTML = "";
-      videos.slice(0, PER_PAGE).forEach(video => {
-        const best = video.video_files.find(v => v.quality === "hd") || video.video_files[0];
-        const div = document.createElement("div");
-        div.className = "item";
-        div.innerHTML = `
-          <div style="position: relative;">
-            <video src="${best.link}" controls></video>
-            <div style="position: absolute; bottom: 6px; right: 6px; color: white; background: rgba(0,0,0,0.5); font-size: 12px; padding: 2px 6px; border-radius: 4px;">
-              Created by Tius
-            </div>
+    async function changePage(direction) {
+      const itemsPerPage = getItemsPerPage();
+      const maxPageFromLoadedItems = Math.ceil(totalItems.length / itemsPerPage);
+
+      let newPage = currentPage + direction;
+
+      if (newPage < 1) {
+        newPage = 1;
+      }
+      
+      // Jika mencoba pergi ke halaman berikutnya dan kita belum punya cukup item
+      if (newPage > maxPageFromLoadedItems && !isLoading) {
+        // Coba muat lebih banyak data dari API
+        await loadCombined(false); // Tunggu sampai data baru selesai dimuat
+        // Setelah data dimuat, hitung ulang maxPageFromLoadedItems
+        const updatedMaxPage = Math.ceil(totalItems.length / itemsPerPage);
+        if (newPage > updatedMaxPage) {
+          // Jika bahkan setelah memuat, halaman masih melebihi, berarti tidak ada lagi data
+          nextPageBtn.disabled = true; // Disable tombol selanjutnya
+          return; // Hentikan fungsi
+        }
+      }
+      
+      currentPage = newPage;
+      displayPage(currentPage);
+    }
+
+    function displayPhoto(url) {
+      const div = document.createElement("div");
+      div.className = "item";
+      div.innerHTML = `
+        <img src="${url}" alt="gambar" />
+        <p style="font-size:12px; text-align:right;">Created by Tius</p>
+        <a href="${url}" download><button>Download</button></a>
+      `;
+      gallery.appendChild(div);
+    }
+
+    function displayVideo(url) {
+      const div = document.createElement("div");
+      div.className = "item";
+      div.innerHTML = `
+        <div style="position: relative;">
+          <video src="${url}" controls autoplay muted loop playsinline></video>
+          <div style="position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,0.5); color: white; font-size: 12px; padding: 2px 6px; border-radius: 4px;">
+            Created by Tius
           </div>
-          <a href="${best.link}" download>
-            <button>Download</button>
-          </a>
-          <a href="https://www.canva.com/design" target="_blank">
-            <button>Buka di Canva</button>
-          </a>
-        `;
-        gallery.appendChild(div);
-      });
+        </div>
+        <a href="${url}" download><button>Download</button></a>
+      `;
+      gallery.appendChild(div);
     }
-
-    function nextPage() {
-      loadPage(currentPage + 1);
-    }
-
-    function prevPage() {
-      if (currentPage > 1) loadPage(currentPage - 1);
-    }
-
-    document.addEventListener("DOMContentLoaded", () => {
-      loadPage(1);
-    });
   </script>
 </body>
 </html>
