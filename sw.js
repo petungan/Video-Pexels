@@ -1,8 +1,7 @@
-const CACHE_NAME = 'galeri-gabungan-v1';
+const CACHE_NAME = 'galeri-gabungan-v2';
 const urlsToCache = [
   '/',
   '/index.html',
-  '/style.css', // Jika Anda memisahkan CSS ke file terpisah
   '/manifest.json',
   '/favicon.ico',
   '/apple-touch-icon.png',
